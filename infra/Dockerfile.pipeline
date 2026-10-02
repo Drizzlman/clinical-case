@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+# Pipeline image: a Cloud Run Job that runs the extraction accuracy harness
+# (and, when wired, the real Vertex extraction). Build from the repository root:
+#   docker build -f infra/Dockerfile.pipeline -t clinical-pipeline .
+
+FROM python:3.14-slim AS builder
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+WORKDIR /src
+COPY pipeline/pyproject.toml ./
+COPY pipeline/app ./app
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install .
+
+FROM python:3.14-slim AS runtime
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+RUN groupadd --system app \
+    && useradd --system --gid app --create-home app
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY --chown=app:app pipeline/tests/golden ./tests/golden
+USER app
+EXPOSE 8080
+ENTRYPOINT ["python", "-m", "app.cli"]
+CMD ["harness", "--golden", "tests/golden", "--out", "/tmp/harness_report.json"]

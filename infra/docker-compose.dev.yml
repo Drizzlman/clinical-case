@@ -1,0 +1,75 @@
+# Dev stack with hot reload: postgres + backend (uvicorn --reload) + frontend (next dev).
+# Source trees are bind-mounted, so edits reload without rebuilding. Run from the
+# repository root:
+#   docker compose -f infra/docker-compose.dev.yml up --build
+# Endpoints: backend http://localhost:8000/health, frontend http://localhost:3000
+# Need only the database (native backend/frontend)? Start just that service:
+#   docker compose -f infra/docker-compose.dev.yml up -d postgres
+
+name: clinical-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clinical}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-clinical}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clinical} -d ${POSTGRES_DB:-clinical}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.backend.dev
+    environment:
+      ENVIRONMENT: development
+      POSTGRES_USER: ${POSTGRES_USER:-clinical}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-clinical}
+      CORS_ORIGINS: '["http://localhost:3000"]'
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.seed &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload --reload-dir /app"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-8000}:8080"
+    volumes:
+      - ../backend:/app
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.frontend.dev
+    environment:
+      BACKEND_URL: http://backend:8080
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+      # Bind mounts on Windows/macOS do not emit filesystem events reliably.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    command: npm run dev -- --hostname 0.0.0.0 --port 3000
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ../frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+
+volumes:
+  pgdata_dev:
+  frontend_node_modules:
+  frontend_next:

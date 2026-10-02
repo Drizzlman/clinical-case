@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+# Backend image: FastAPI served by uvicorn. Build from the repository root:
+#   docker build -f infra/Dockerfile.backend -t clinical-backend .
+
+FROM python:3.14-slim AS builder
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+WORKDIR /src
+COPY backend/pyproject.toml ./
+COPY backend/app ./app
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install .
+
+FROM python:3.14-slim AS runtime
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8080
+RUN groupadd --system app \
+    && useradd --system --gid app --create-home app
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY --chown=app:app backend/alembic.ini ./alembic.ini
+COPY --chown=app:app backend/alembic ./alembic
+USER app
+EXPOSE 8080
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

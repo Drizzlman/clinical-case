@@ -1,0 +1,32 @@
+# Root .dockerignore — Docker build context root is the repository root for all
+# images (see infra/Dockerfile.*). Keep images small and secret-free (INV-3).
+
+.git
+.gitignore
+.github
+.agents
+.opencode
+openspec
+infra
+logs
+*.md
+
+**/.venv
+**/venv
+**/node_modules
+**/.next
+**/out
+**/dist
+**/build
+**/coverage
+**/.import_linter_cache
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.coverage
+**/.env
+**/.env.*
+**/tsconfig.tsbuildinfo

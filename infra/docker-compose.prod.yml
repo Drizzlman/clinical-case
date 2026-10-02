@@ -1,0 +1,57 @@
+# Prod-like local stack: postgres + backend + frontend built from the Dockerfiles.
+# Run from the repository root:
+#   docker compose -f infra/docker-compose.prod.yml up --build
+# Endpoints: backend http://localhost:8000/health, frontend http://localhost:3000
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clinical}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-clinical}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clinical} -d ${POSTGRES_DB:-clinical}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.backend
+    environment:
+      ENVIRONMENT: production
+      POSTGRES_USER: ${POSTGRES_USER:-clinical}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-clinical}
+      CORS_ORIGINS: '["http://localhost:3000"]'
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.seed &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-8000}:8080"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      BACKEND_URL: http://backend:8080
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:8080"
+
+volumes:
+  pgdata_prod:

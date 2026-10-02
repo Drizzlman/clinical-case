@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+# Dev backend image: FastAPI + dev tooling with uvicorn --reload.
+# Source code is bind-mounted at runtime (see infra/docker-compose.dev.yml), so
+# only dependencies are baked in here. Build context is the repository root:
+#   docker build -f infra/Dockerfile.backend.dev -t clinical-backend-dev .
+
+FROM python:3.14-slim
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+WORKDIR /app
+COPY backend/pyproject.toml ./
+COPY backend/app ./app
+RUN pip install --upgrade pip \
+    && pip install ".[dev]"
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic ./alembic
+EXPOSE 8080
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
